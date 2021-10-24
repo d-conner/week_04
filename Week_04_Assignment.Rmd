@@ -19,22 +19,43 @@ pacman::p_load(
   here
 )
 ```
+The provided code works in 2 steps:
+1. Check for `pacman` and load or install as necessary
+The require function loads an existing package or returns False if the package is missing. For the if statement to proceed it must have a condition met, or logically True. In this case, we want the `install` behavior when `require` is not-True, so we negate the result of `require` with a leading `!` or NOT.
+
+2. Use the p_load command from the pacman package to load the listed libraries to the active session.
+
+`pacman` is a package management suite for R. It provides a wide array of functions that can be used to install, uninstall, load, unload, or retrieve information on packages using short commands.
+
 
 2. Read the `burritos.csv` file located in the `Data` folder into an object called `burritos`.
 
 ```{r}
-
+burritos <- read_csv(here::here("Data", "burritos.csv"),
+                     col_types = cols(Queso = "c") 
+                     # correction to incorrect default col guess(es)
+                     )
+glimpse(burritos)
 ```
 
 3. Determine how many `NA` values exist in each column.
 
 ```{r}
+burritos %>%
+    summarize(across(everything(),~sum(is.na(.))))
 
 ```
 
 4. Many of the columns in the dataset use `x` to indicate whether or not the burrito includes the ingredient or not. Convert these columns into logical columns. Overwrite the original dataframe with the newly mutated dataframe.
 
 ```{r}
+burritos <-
+burritos %>%
+  mutate(across(c(Chips, Unreliable:Zucchini),
+                  ~if_else(is.na(.), F, T)
+                )
+         ) # %>%
+#  summary()
 
 ```
 
@@ -42,25 +63,107 @@ pacman::p_load(
 
 ```{r}
 
+burritos %>%
+  select(c(Chips, Beef:Zucchini))  %>%   # anything edible is an ingredient
+  summarize(colnames(.),colSums(.))
+  # Sum of all logical values = number of entries with value "True"
+
 ```
 
 6. Several of the burritos are missing Yelp and Google review values. Replace the missing values by imputing them with the *median* of their respective column. Overwrite the original dataframe with the newly mutated dataframe.
 
 ```{r}
+burritos <-
+burritos %>%
+  mutate(Yelp =  
+             if_else(is.na(Yelp),     # call function
+                     true =  median(Yelp, na.rm = T), 
+                     false = Yelp)
+         )  %>%
+  mutate(Google =  
+             if_else(is.na(Google),     # call function
+                     true =  median(Google, na.rm = T), 
+                     false = Google)
+         ) # %>%
+  # select(Yelp, Google)
 
 ```
 
 7. Similarly, several of the burritos are missing `Length`, `Circum`, and `Volume` values. Replace the missing values by imputing them with the *mean* of their respective column. Overwrite the original dataframe with the newly mutated dataframe.
 
 ```{r}
-
+burritos <-
+burritos %>%
+  mutate(across(c(Length, Circum, Volume),   
+             ~if_else(is.na(.x),     # use .x to specify column rather than overall for all columns
+                     true =  mean(.x, na.rm = T), 
+                     false = .x)
+                )
+         ) # %>%
+#  select(Length, Circum, Volume)
 ```
+At 3 column items, repeating is a bit tedious. There has to be a way to repeat the operation within the column for multiple columns, and so there is -- using ".x" instead of ".".
+
+Noted that first 75 rows are NA in these 3 columns. Check data for correct operation (interpolated vs unaltered) below that line.
+
 
 8. The `Rec` column is messy. Convert it to a logical field. Overwrite the original dataframe with the newly mutated dataframe.
+```{r}
+unique(burritos$Rec)  # identify values in column
+```
 
 ```{r}
-
+#rewrite data from permutations of yes/no/blank_NA to T/F/NA (logical)
+burritos <-
+burritos %>%
+  mutate(Rec =  case_when(
+                  Rec == "yes" ~ TRUE, # no quotes for logical value
+                  Rec == "Yes" ~ TRUE, 
+                  Rec == "Y" ~ TRUE,
+                  Rec == "no" ~ FALSE,
+                  Rec == "No" ~ FALSE,
+                  Rec == "N" ~ FALSE
+                                      # NA was OK
+                  )
+             
+         ) #  %>%
+  # select(Rec)
 ```
 
 9. Create and answer a question to answer about the burritos dataset utilizing any of the techniques we discussed in class this week. Utilize themes to improve your visualization.
+
+Q. Do ratings differ between burritos that get a Y/N recommendation?
+```{r}
+burritos %>% 
+ggplot(aes(x = overall)) +
+  geom_histogram(na.rm = T,    # Remove warning re 2 missing values
+                 bins = 25) +  # 25 rating divisions of 0.2 units
+  facet_grid(Rec ~ .) +
+  theme_minimal() +
+  labs(x = "Overall Rating",
+       y = "Count",
+       title = "Rating Distribution by Recommendation Status")
+```
+Overall, burritos that get recommended have higher ratings than ones that do not. The  burritos with a rating but not a recommendation status (NA) seem to cover the full range of possible ratings.
+
+Let's get numerical to confirm...
+```{r}
+burritos %>% 
+  select(Rec, overall) %>%
+  group_by(Rec) %>%
+  summarise(count = n(), mean = mean(overall, na.rm = T), median = median(overall, na.rm = T), stdev = sd(overall, na.rm = T)) %>%
+  ungroup()
+
+```
+The numerical summary indicates that
+a) the mean and median values are very near each other for all 3 categories for recommendation (T, F, NA), and 
+b) NA has a broader spread than T and F based on standard deviation.
+These are consistent with the distribution plots.
+
+For ease of comparison, we'll look at median as the center of the distribution. A burrito that was recommended had a median rating 1.3 points (of 5) greater than one that was not-recommended. 
+```{r}
+# what is weighted overall rating of burritos with T/F rating? (manual -- could probably program selecting non-NA subset of Rec?)
+((70 * 2.7) + (163 * 4.0))/(163+70)
+```
+The burritos without recommendation data have a median slightly below the ones with positive recommendation. Comparing to the population-weighted median of values with recommendation status, the median without recommendation data is comparable (3.6 predicted vs 3.8 actual) within the spread of the data.
 
